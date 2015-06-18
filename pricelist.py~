@@ -1,0 +1,43 @@
+# coding: utf-8
+import pickle 
+
+DATA_FILE = 'pricelist.txt'
+
+def add_list(item):
+	"""
+	add a item into pricelist
+	"""
+	with open(DATA_FILE, 'rb') as pricelist:
+		try:
+			pklist = pickle.load(pricelist)
+		except EOFError:
+			pklist = []		
+		pklist.append(item)	
+	with open(DATA_FILE, 'wb') as pricelist:
+		pickle.dump(pklist, pricelist)
+
+def load_list():
+	"""
+	output all pricelist in the database
+	"""
+	with open(DATA_FILE, 'rb') as pricelist:
+		try:
+			pklist = pickle.load(pricelist)
+		except EOFError: 
+			pass
+	return pklist
+
+def modify_item(row, item):
+	"""
+	the function modify a certain row of the pricelist, 
+	the input item is the correct value in that row
+	"""
+	print row
+	with open(DATA_FILE, 'rb') as pricelist:
+		try:
+			pklist = pickle.load(pricelist)
+		except EOFError:
+			pklist = []		
+		pklist[row] = item	
+	with open(DATA_FILE, 'wb') as pricelist:
+		pickle.dump(pklist, pricelist)	

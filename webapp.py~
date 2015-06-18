@@ -1,0 +1,228 @@
+# -*- coding: utf-8 -*-
+import os
+from sqlite3 import dbapi2 as sqlite3
+from flask import Flask, request, session, g, redirect, url_for, abort, render_template, flash
+from sql_functions import namematch_id, id_match_history, priceinfo_list
+import pandas as pd
+from pricelist import add_list, load_list, modify_item, remove_item
+from werkzeug import secure_filename
+import re
+from clean_functions import data_clean, process2product, process2history, import2product, import2history
+import numpy as np
+from process_raw_data import processdata, clean_line, Batch
+from io import StringIO
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.style.use('ggplot')
+
+app = Flask(__name__)
+
+# Load default config and override config from an environment variable
+app.config.update(dict(
+    DATABASE=os.path.join(app.root_path, 'webapp.db'),
+    DEBUG=True,
+    SECRET_KEY='development key',
+    USERNAME='admin',
+    PASSWORD='default'
+))
+
+app.config.from_envvar('FLASKR_SETTINGS', silent=True)
+
+
+
+
+
+def connect_db():
+    """Connects to the specific database."""
+    rv = sqlite3.connect(app.config['DATABASE'])
+    rv.row_factory = sqlite3.Row            # return a dictionary each row
+    return rv
+
+
+def get_db():
+    """Opens a new database connection if there is none yet for the
+    current application context.
+    """
+    if not hasattr(g, 'sqlite_db'):
+        g.sqlite_db = connect_db()
+    return g.sqlite_db
+
+@app.teardown_appcontext
+def close_db(error):
+    """Closes the database again at the end of the request."""
+    if hasattr(g, 'sqlite_db'):
+        g.sqlite_db.close()
+
+
+# global variable
+nav_list = [u'公司主页', u'产品查询', u'快捷报价', u'清单管理', 
+		u'数据库更新', u'标签打印', u'爆破质量控制', u'爆破片生产过程控制']
+nav_url = ['http://jhwuyue.1688.com/', '/query?keyname=RF150-30&id=1234', '/lsman', '/lsman', '/', '/']
+info = {'title' : u'金华伍岳密封件有限公司', 'head' : u'伍岳信息管理平台',
+	'query': u'产品查询', 'pricing' : u'快捷报价', 'lsman' : u'清单管理', 'lsmod' : u'修改清单', 'lsdownload' : u'下载清单', 'dbupdate' : u'数据库更新', 'label' : u'标签打印', 'qualitycontrol':u'爆破片检验数据分析', 'processcontrol' : u'爆破片生产过程控制'}
+batchinfo = '2015.3.10 c02 8.5  7 5 6 6 6 55 7 6 55 5 5 4 6 4 4 5 45 4 35 4 5 4 5 5 5 5 3 5 4 45 35 3 5 45 4 3 3 4 45 4 3 3 4  45 4 5 4 6 5 3 6 5 5 5'
+
+
+
+@app.route('/')
+def index():
+	"""
+	top page
+	"""	
+	query_content = ['', '']	
+	return render_template('index.html', info = info, nav_list = nav_list, nav_url = nav_url, query_content = query_content)
+
+
+@app.route('/query', methods = ['Post','Get'])
+def show_records():
+	query_content = [request.args['keyname'], request.args['id']]
+	if len(query_content[0]) != 0:	
+		table1 = namematch_id(query_content[0])
+	else:
+		table1 = []
+	if len(query_content[1]) != 0:	
+		table2 = id_match_history(query_content[1])
+	else:
+		table2 = []	
+	caption1 = query_content[0] + u'垫片查询结果'
+	caption2 = query_content[1] + u'号垫片生产记录'
+	col1 = [u'编号', u'垫片名称', u'垫片类型', u'规格', u'尺寸']
+	col2 = [u'编号', u'发货日期', u'客户单位', u'垫片名称', u'尺寸', u'数量', u'单价']
+
+	return render_template('show_table.html', table1 = table1, table2 = table2, info = info, nav_list = nav_list, col1 = col1, col2 = col2, caption1 = caption1, caption2 = caption2, query_content = query_content, nav_url = nav_url)
+
+@app.route('/pricing', methods = ['Post', 'Get'])
+def add_item():
+	new_item = request.args['new_item']
+	new_item = new_item.split()
+	try:	
+		if len(new_item) == 3:
+			new_item = [int(new_item[0]), int(new_item[1]), float(new_item[2])]
+			add_list(new_item)
+			flash(u'成功加入清单!')
+			return redirect(url_for('show_list'))
+		else:
+			flash(u'输入错误！')
+	except:
+		flash(u'输入错误！')	
+    	return redirect(url_for('index'))
+
+
+## show pricelist ##
+@app.route('/lsman')
+def show_list():
+	pricelist = load_list()
+        priceinfo = priceinfo_list(pricelist).values
+	col = [u'序号', u'编号', u'名称', u'类型', u'规格', u'尺寸',u'数量',u'单价', u'价格']
+	caption = u'垫片报价清单一览'
+	return render_template('lsman.html', priceinfo = priceinfo, info = info, nav_list = nav_list, nav_url = nav_url, col = col, caption = caption)
+
+## modify page ##
+@app.route('/modls')
+def mod_list():
+	pricelist = load_list()
+	priceinfo = priceinfo_list(pricelist).values
+	col = [u'序号', u'编号', u'名称', u'类型', u'规格', u'尺寸', u'数量',u'单价', u'价格', u'修改', u'删除']
+	caption = u'修改清单'
+	return render_template('lsmod.html', priceinfo = priceinfo, info = info, nav_list = nav_list, col = col, caption = caption, nav_url = nav_url)
+
+
+### modify delete and drop ###
+@app.route('/mod_item/<row>', methods = ['Post', 'Get'])
+def mod_item(row):
+	row = int(row.encode('utf8'))	
+	mod_item = request.form['change_item']
+	mod_item = mod_item.split()
+	try:	
+		if len(mod_item) == 3:
+			mod_item = [int(mod_item[0]), int(mod_item[1]), float(mod_item[2])]
+			modify_item(row, mod_item)
+			flash(u'修改成功!')
+			return redirect(url_for('mod_list'))
+		else:
+			flash(u'输入错误！')
+	except:
+		flash(u'输入错误！')	
+    	return redirect(url_for('mod_list'))
+
+@app.route('/rm_item/<row>', methods = ['Post', 'Get'])
+def rm_item(row):
+	row = int(row.encode('utf8'))	
+	remove_item(row)
+    	return redirect(url_for('mod_list'))
+
+
+
+
+### output pricelist ###
+@app.route('/dl_list')
+def dl_list():
+	pricelist = load_list()
+	priceinfo = priceinfo_list(pricelist)
+	col = [u'序号', u'编号', u'名称', u'类型', u'规格', u'尺寸',u'数量',u'单价', u'价格']
+	priceinfo.columns = col
+	priceinfo.to_csv('static/out.csv', encoding = 'utf8', na_rep = 'NULL', index = False, header = True)
+	return redirect('static/out.csv')
+
+@app.route('/upload', methods = ['Post', 'Get'])
+def upload_file():
+	file_path = os.path.join(os.getcwd(), 'static')
+	if request.method == 'POST':
+		f = request.files['the_file']
+		f.save(os.path.join(file_path, secure_filename(f.filename)))
+		flash(u'文件上传成功！')
+		return redirect(url_for('index'))
+
+@app.route('/data_clean')
+def data_process():
+	names = ['date','no','type','std_code','size','number','unit_price','price','production','company','year']
+	try:	
+		data = pd.read_csv('static/daoru.csv', encoding = 'gbk', header = None, names = names)
+		data = data_clean(data)
+		data2 = process2product(data)
+		data3 = process2history(data)
+		table1 = data2.values
+		table2 = data3.values	
+	except IOError:
+		flash(u'文件不存在！')
+		table1 = []
+		table2 = []
+	col1 = [u'序号', u'名称',  u'类型', u'规格',u'尺寸']	
+	col2 = [u'序号', u'名称', u'类型', u'尺寸',u'数量', u'单价', u'价格', u'日期', u'客户公司', u'生产编号']
+	caption1 = u'新导入垫片'
+	caption2 = u'新导入清单一览'
+	data3.to_csv('static/history_temp.csv', encoding = 'gbk', na_rep = 'NULL', index = False, header = True)
+	data2.to_csv('static/product_temp.csv', encoding = 'gbk', na_rep = 'NULL', index = False, header = True)
+	return render_template('show_import.html', table1 = table1, table2 = table2, info = info, nav_list = nav_list, col1 = col1, col2 = col2, caption1 = caption1, caption2 = caption2, nav_url = nav_url)
+
+@app.route('/import_db')
+def import_db():
+	try:
+		data2 = pd.read_csv('static/product_temp.csv', encoding = 'gbk')
+		data3 = pd.read_csv('static/history_temp.csv', encoding = 'gbk')
+		import2product(data2)
+		import2history(data3)
+		flash(u'成功导入数据库！')
+		return redirect(url_for('data_process'))
+	except IOError:
+		flash(u'文件未正确上传!')
+	return redirect(url_for('index'))
+
+@app.route('/batch_analysis', methods = ['Post', 'Get'])
+def batch_analysis():
+	batchinfo = request.args['batchinfo']
+	donels = clean_line(batchinfo)
+	batch = Batch(donels)
+	str_batch = str(batch)
+	pt1 = pd.Series(batch.get_records())
+	fig1 = pt1.plot()
+	buffer1 = StringIO()
+	fig1.savefig(buffer1)
+	plot_data = buffer1.getvalue()
+	return render_template('show_batch.html', plot_data = plot_data, donels = donels, str_batch = str_batch, batch = batch, info = info, nav_list = nav_list, nav_url = nav_url)
+
+if __name__ == '__main__':
+	app.debug = True
+	app.run(host = '0.0.0.0')
+
+

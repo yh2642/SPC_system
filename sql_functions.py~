@@ -1,0 +1,63 @@
+# -*- coding: utf-8 -*-
+import sqlite3
+import pandas as pd
+from string import Template
+
+db_name = 'productdata.sqlite'
+
+def namematch_id(search_str):
+	search_str = '%' + search_str + '%'
+	connection = sqlite3.connect('productdata.sqlite')
+	cursor = connection.cursor()
+	cursor.execute("""SELECT * FROM product WHERE keyname LIKE ?""", (search_str,))
+	results = cursor.fetchall()
+	connection.close()
+	#results = pd.DataFrame(results)
+	return results
+
+	
+def id_match_history(query_id):
+	connection = sqlite3.connect('productdata.sqlite')
+	cursor = connection.cursor()
+	cursor.execute("""SELECT product_id, keydate, company, keyname, size, number, unit_price FROM history WHERE product_id = ?""", (query_id,))
+	results = cursor.fetchall()
+	connection.close()
+	#results = pd.DataFrame(results)
+	return results
+	
+	
+def id_match_product(query_id):
+	connection = sqlite3.connect('productdata.sqlite')
+	cursor = connection.cursor()
+	cursor.execute("""SELECT * FROM product WHERE id = ?""", (query_id,))
+	results = cursor.fetchall()
+	connection.close()
+	#results = pd.DataFrame(results, columns = ['id', 'keyname', 'type', 'std_code', 'size'])
+	return results
+
+def priceinfo_list(pricelist):
+	'''
+	input a list of query pricelist from pickle
+	the function return a neat output priceinfo list for visual
+	'''
+	key = []
+	name = []
+	type = []
+	size = []
+	for item in pricelist:
+		unit_result = id_match_product(item[0])
+		key.append(unit_result[0][1].split("::")[0])      # waiting for modify by update the database
+		name.append(unit_result[0][1].split("::")[1])
+		type.append(unit_result[0][2])
+		size.append(unit_result[0][4])
+ 	priceinfo = pd.DataFrame(pricelist, columns = ['id', 'amount', 'unit_price'])
+	priceinfo['key'] = key
+	priceinfo['name'] = name
+	priceinfo['type'] = type
+	priceinfo['size'] = size
+	priceinfo['price'] = priceinfo.amount * priceinfo.unit_price
+	priceinfo['no'] = range(1, len(priceinfo)+1)
+	priceinfo = priceinfo.reindex(columns = ['no','id', 'key','type', 'name', 'size', 'amount', 'unit_price', 'price'])
+	return priceinfo
+
+

@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block body %}
+<h2>{{info['query']}}</h2>
+    <form action="{{ url_for('show_records') }}" method="get" class="add-entry">          
+          <label for="">产品名称检索</label><input type="text" name="keyname", value = "">
+            <label for="">产品生产记录检索</label><input type="text" name="id", value = "">
+            <input type="submit" value="开始查询">
+        </form>      
+<p> table1 </p>
+<table>
+<caption>{{caption1}}</caption>
+<tr>
+{% for ele in col1 %}
+<th>
+{{ele}}
+</th>
+{% endfor %}
+</tr>
+{% for row in table1 %}s
+<tr>
+{% for col in row %}
+<td>{{col}}</td>
+{% endfor %}
+</tr>
+{% endfor %}
+</table>
+
+<p> table2 </p>
+<table>
+<caption>{{caption2}}</caption>
+<tr>
+{% for ele in col2 %}
+<th>
+{{ele}}
+</th>
+{% endfor %}
+</tr>
+{% for row in table2 %}
+<tr>
+{% for col in row %}
+<td>{{col}}</td>
+{% endfor %}
+</tr>
+{% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,114 @@
+import pandas as pd
+
+def processdata(data):
+	cleanls = []
+	for line in data:
+		linels = line.strip().split()
+		linels[0], linels[1] = moddate(linels[0], linels[1], '2015')
+		cleanls.append(linels)
+
+	donels = []
+	new_model = []
+	for line in cleanls:
+		doneline = []
+		if 'n' in line:
+			new_model.append(cleanls.index(line))
+			line.remove('n')
+		for ele in line:
+			if len(ele) < 3 and ele not in ['n', 't', 'm', '?']:
+				doneline.append('3.' + ele)
+			else:
+				doneline.append(ele)
+		donels.append(doneline)
+	new_model.append(len(donels))
+	for indx in range(len(new_model) - 1):
+		for indx_label in range(new_model[indx] , new_model[indx + 1]):
+			temp_batchID = "m" + donels[new_model[indx]][0]
+			donels[indx_label].insert(3, temp_batchID)
+		
+	#no = 0
+	#for line in donels:
+	#	if 'n' in line:
+			
+	return donels
+
+def clean_line(line, sep = '-'):	
+	linels = line.strip().split()
+	datels = linels[0].split('.')
+	datefm = sep.join(datels)
+	year = datels[0]
+	month = datels[1]
+	batch = linels[1]
+	if len(month) < 2:
+		batchfm = year[2:] + sep + '0' + month + sep + batch.upper()
+	else:
+		batchfm = year[2:] + sep + month + sep + batch.upper()
+	linels[0], linels[1] = datefm, batchfm
+	doneline = []
+	for ele in linels:
+		if len(ele) < 3 and ele not in ['n', 't', 'm', '?']:
+			doneline.append('3.' + ele)
+		else:
+			doneline.append(ele)
+	return doneline
+
+def moddate(date,batch, year = '2014', sep = '-'):
+	month, day = date.split('.')
+	datefm = year + sep + month + sep + day
+	if len(month) < 2:
+		batchfm = year[2:] + sep + '0' + month + sep + batch.upper()
+	else:
+		batchfm = year[2:] + sep + month + sep + batch.upper()
+	return datefm, batchfm
+	
+class Batch:
+	def __init__(self, line, modelID = None, modelinfo = None):
+		self.date = line[0]
+		self.batchID = line[1]
+		self.outpressure = line[2]
+		
+		if len(line[3]) == 10:
+			self.modelID = line[3]
+			self.records = line[4:]
+		else:
+			self.modelID = 'unknown'
+			self.records = line[3:]
+
+		if 't' in self.records or 'm' in self.records:
+			self.except_point = 1
+		else:
+			self.except_point = 0
+
+	def __str__(self):
+		ans = "the info of this batch is: \n"
+		ans += "the batch ID: " + self.batchID
+		# ans += "the mean is %d, the std is %d", (self.get_mean(), self.get_std())
+		# ans += "max %d, min %d, range %d", self.get_range()
+		return ans
+
+	def get_records(self):
+		positive_records = []
+		except_point = 0
+		for ele in self.records:
+			if ele not in ['t', 'm']:
+				positive_records.append(float(ele))
+			else: 
+				positive_records.pop()
+		return positive_records
+	def get_mean(self):
+		return pd.Series(self.get_records()).mean()
+
+	def get_std(self):
+		return pd.Series(self.get_records()).std()
+
+	def get_max(self):
+		return pd.Series(self.get_records()).max()
+
+	def get_min(self):			
+		return pd.Series(self.get_records()).min()
+
+	def get_range(self):
+		return self.get_max() - self.get_min()
+
+		
+				

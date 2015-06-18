@@ -1,0 +1,5 @@
+{% extends "layout.html" %}
+{% block body %}     
+<p> pricelist </p>
+<p> {{pricelist}} </p>
+{% endblock %}
